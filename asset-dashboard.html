@@ -35,8 +35,9 @@ const INIT = {
     { acct: "키움", name: "키움 예수금", sym: "", qty: 1, val: 382, type: "현금" },
     { acct: "코인", name: "BTC", sym: "CURRENCY:BTCUSD", qty: 0.01748425, val: 184.8, type: "코인", avg: "₩98,333,927" },
     { acct: "코인", name: "ETH 스테이킹", sym: "CURRENCY:ETHUSD", qty: 0.1049847, val: 34.8, type: "코인", avg: "₩2,678,247" },
-    { acct: "은행", name: "KB국민 ONE통장 (주거래·정산계좌)", sym: "", qty: 1, val: 509.86, type: "현금" },
-    { acct: "은행", name: "Npay머니 우리 파킹통장 (연 4%)", sym: "", qty: 1, val: 199.09, type: "현금" },
+    { acct: "은행", name: "KB국민 ONE통장 (주거래·정산계좌)", sym: "", qty: 1, val: 509.8573, type: "현금" },
+    { acct: "은행", name: "Npay머니 우리 파킹통장 (연 4%)", sym: "", qty: 1, val: 199.0926, type: "현금" },
+    { acct: "은행", name: "개인사업자 입출금통장 (사업·별도관리)", sym: "", qty: 1, val: 297.4489, type: "현금" },
     { acct: "묶인자산", name: "청약 (27.1까지 정지)", sym: "", qty: 1, val: 1255, type: "묶임" },
     { acct: "묶인자산", name: "청년미래적금", sym: "", qty: 1, val: 50, type: "묶임" },
   ],
@@ -244,7 +245,10 @@ function App() {
     const bi = L.holdings.findIndex((h) => h.acct === "은행" && h.name === "입출금");
     if (bi >= 0) { L.holdings[bi] = { ...L.holdings[bi], name: "KB국민 ONE통장 (주거래·정산계좌)", val: 509.86 }; L.holdings.splice(bi + 1, 0, { acct: "은행", name: "Npay머니 우리 파킹통장 (연 4%)", sym: "", qty: 1, val: 199.09, type: "현금" }); ch = true; }
     const kb = L.holdings.find((h) => h.name.includes("KB국민 ONE"));
-    if (kb && Math.abs(kb.val - 524.86) < 0.01) { kb.val = 509.86; ch = true; }
+    if (kb && Math.abs(kb.val - 509.8573) > 0.005 && (Math.abs(kb.val - 524.86) < 0.01 || Math.abs(kb.val - 509.86) < 0.01)) { kb.val = 509.8573; ch = true; }
+    const np = L.holdings.find((h) => h.name.includes("Npay"));
+    if (np && Math.abs(np.val - 199.09) < 0.01 && np.val !== 199.0926) { np.val = 199.0926; ch = true; }
+    if (!L.holdings.some((h) => h.name.includes("개인사업자"))) { const bix = L.holdings.findIndex((h) => h.name.includes("Npay")); L.holdings.splice(bix + 1, 0, { acct: "은행", name: "개인사업자 입출금통장 (사업·별도관리)", sym: "", qty: 1, val: 297.4489, type: "현금" }); ch = true; }
     return ch; };
   const pull = async (url) => { try { setSyncMsg("시트에서 불러오는 중…"); const r = await fetch(url); const j = await r.json(); if (j.ledger) { const ch = migrate(j.ledger); setSt(j.ledger); if (ch) await fetch(url, { method: "POST", body: JSON.stringify(j.ledger) }); } else { await fetch(url, { method: "POST", body: JSON.stringify(st) }); } setPrices(j.prices||{}); if (j.fx) { setFxAuto(j.fx); setFx(String(Math.round(j.fx * 10) / 10)); localStorage.setItem("fx", String(Math.round(j.fx * 10) / 10)); } setSyncMsg("동기화됨 " + new Date().toLocaleTimeString("ko-KR")); } catch (e) { setSyncMsg("동기화 실패: " + e.message); } };
   useEffect(() => { if (syncUrl) pull(syncUrl); }, []);
@@ -301,7 +305,7 @@ function App() {
     save({ ...st, holdings: hs, baseDate: today(), trades: [{ d: today(), side: form.side, acct: form.acct, name: form.name, qty, price: unit + price, amt, memo: form.memo.trim() }, ...st.trades] });
     setForm({ ...form, name: "", sym: "", qty: "", price: "", memo: "" });
   };
-  const editVal = (ix, v) => { const hs = [...st.holdings]; hs[ix] = { ...hs[ix], val: +v || 0, manual: true }; save({ ...st, holdings: hs, baseDate: today() }); };
+  const editVal = (ix, v) => { const hs = [...st.holdings]; let n = +String(v).replace(/,/g, "") || 0; if (n >= 100000) n = n / 10000; hs[ix] = { ...hs[ix], val: n, manual: true }; save({ ...st, holdings: hs, baseDate: today() }); };
   const resetAuto = (ix) => { const hs = [...st.holdings]; delete hs[ix].manual; save({ ...st, holdings: hs }); };
   const editLiving = (k, v) => save({ ...st, living: { ...st.living, [k]: +v || 0 } });
   const [nlk, setNlk] = useState(""); const [nlv, setNlv] = useState("");
@@ -433,7 +437,7 @@ function App() {
                 <tr><td className="acct" colSpan="2">{g}{dep > 0 && <span style={{ marginLeft: 8, color: "#F2B84B" }}>총 예수금 ₩{Math.round(dep * 10000).toLocaleString()}</span>}{Math.abs(gp) > 1 && <span style={{ marginLeft: 8, color: gp >= 0 ? "#E5484D" : "#3E7BFA" }}>{gp >= 0 ? "+" : "−"}₩{Math.abs(Math.round(gp)).toLocaleString()}</span>}</td><td className="n acct">{fmt(sub)}만</td><td className="n acct">{((sub / total) * 100).toFixed(1)}%</td></tr>
                 {rows.map(HRow)}
               </React.Fragment>); })}</tbody></table>
-          <p className="muted" style={{ marginTop: 10 }}>시세가 있는 종목은 수량 × 현재가(× 환율)로 평가금이 자동 계산됩니다("자동" 표시, 영업일 기준 구글 시세). 틀렸으면 칸을 직접 고치면 그 값으로 고정되고, "수동 → 자동"으로 되돌릴 수 있습니다. 예수금·국내 비상장 항목은 직접 입력.</p>
+          <p className="muted" style={{ marginTop: 10 }}>금액 칸엔 원 단위(예: 3,598,573)로 그대로 입력해도 됩니다(10만 이상이면 원으로 인식해 자동 변환). 시세가 있는 종목은 수량 × 현재가(× 환율)로 평가금이 자동 계산됩니다("자동" 표시, 영업일 기준 구글 시세). 틀렸으면 칸을 직접 고치면 그 값으로 고정되고, "수동 → 자동"으로 되돌릴 수 있습니다. 예수금·국내 비상장 항목은 직접 입력.</p>
         </div>
       </>)}
 
