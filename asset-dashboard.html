@@ -35,11 +35,11 @@ const INIT = {
     { acct: "키움", name: "키움 예수금", sym: "", qty: 1, val: 382, type: "현금" },
     { acct: "코인", name: "BTC", sym: "CURRENCY:BTCUSD", qty: 0.01748425, val: 184.8, type: "코인", avg: "₩98,333,927" },
     { acct: "코인", name: "ETH 스테이킹", sym: "CURRENCY:ETHUSD", qty: 0.1049847, val: 34.8, type: "코인", avg: "₩2,678,247" },
-    { acct: "은행", name: "KB국민 ONE통장 (주거래·정산계좌)", sym: "", qty: 1, val: 509.8573, type: "현금" },
+    { acct: "은행", name: "KB국민 ONE통장 (주거래·정산계좌)", sym: "", qty: 1, val: 359.8573, type: "현금" },
     { acct: "은행", name: "Npay머니 우리 파킹통장 (연 4%)", sym: "", qty: 1, val: 199.0926, type: "현금" },
     { acct: "은행", name: "개인사업자 입출금통장 (사업·별도관리)", sym: "", qty: 1, val: 297.4489, type: "현금" },
     { acct: "묶인자산", name: "청약 (27.1까지 정지)", sym: "", qty: 1, val: 1255, type: "묶임" },
-    { acct: "묶인자산", name: "청년미래적금", sym: "", qty: 1, val: 50, type: "묶임" },
+    { acct: "묶인자산", name: "청년미래적금", sym: "", qty: 1, val: 100, type: "묶임" },
   ],
   trades: [],
 };
@@ -245,10 +245,12 @@ function App() {
     const bi = L.holdings.findIndex((h) => h.acct === "은행" && h.name === "입출금");
     if (bi >= 0) { L.holdings[bi] = { ...L.holdings[bi], name: "KB국민 ONE통장 (주거래·정산계좌)", val: 509.86 }; L.holdings.splice(bi + 1, 0, { acct: "은행", name: "Npay머니 우리 파킹통장 (연 4%)", sym: "", qty: 1, val: 199.09, type: "현금" }); ch = true; }
     const kb = L.holdings.find((h) => h.name.includes("KB국민 ONE"));
-    if (kb && Math.abs(kb.val - 509.8573) > 0.005 && (Math.abs(kb.val - 524.86) < 0.01 || Math.abs(kb.val - 509.86) < 0.01)) { kb.val = 509.8573; ch = true; }
+    if (kb && (Math.abs(kb.val - 524.86) < 0.01 || Math.abs(kb.val - 509.86) < 0.01 || Math.abs(kb.val - 509.8573) < 0.01)) { kb.val = 359.8573; ch = true; }
     const np = L.holdings.find((h) => h.name.includes("Npay"));
     if (np && Math.abs(np.val - 199.09) < 0.01 && np.val !== 199.0926) { np.val = 199.0926; ch = true; }
     if (!L.holdings.some((h) => h.name.includes("개인사업자"))) { const bix = L.holdings.findIndex((h) => h.name.includes("Npay")); L.holdings.splice(bix + 1, 0, { acct: "은행", name: "개인사업자 입출금통장 (사업·별도관리)", sym: "", qty: 1, val: 297.4489, type: "현금" }); ch = true; }
+    const sv = L.holdings.find((h) => h.name.includes("청년미래적금"));
+    if (sv && sv.val === 50) { sv.val = 100; ch = true; }
     return ch; };
   const pull = async (url) => { try { setSyncMsg("시트에서 불러오는 중…"); const r = await fetch(url); const j = await r.json(); if (j.ledger) { const ch = migrate(j.ledger); setSt(j.ledger); if (ch) await fetch(url, { method: "POST", body: JSON.stringify(j.ledger) }); } else { await fetch(url, { method: "POST", body: JSON.stringify(st) }); } setPrices(j.prices||{}); if (j.fx) { setFxAuto(j.fx); setFx(String(Math.round(j.fx * 10) / 10)); localStorage.setItem("fx", String(Math.round(j.fx * 10) / 10)); } setSyncMsg("동기화됨 " + new Date().toLocaleTimeString("ko-KR")); } catch (e) { setSyncMsg("동기화 실패: " + e.message); } };
   useEffect(() => { if (syncUrl) pull(syncUrl); }, []);
