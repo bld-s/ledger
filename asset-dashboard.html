@@ -199,7 +199,7 @@ const ALLOC_TARGET = { 성장: 50, 인컴: 30, 지수: 20 };
 const ALLOC_EXACT = { UNH: "성장", AMZN: "성장", AVGO: "성장", NVO: "성장", BTC: "성장", "ETH 스테이킹": "성장", JPM: "인컴", O: "인컴", MO: "인컴", KHC: "인컴" };
 const ALLOC_INCL = [["배당다우", "인컴"], ["S&P500", "지수"], ["나스닥100", "지수"], ["반도체", "성장"]];
 const bucketOf = (h) => { if (h.type !== "주식" && h.type !== "코인") return null; if (ALLOC_EXACT[h.name]) return ALLOC_EXACT[h.name]; for (const [k, b] of ALLOC_INCL) if (h.name.includes(k)) return b; return "성장"; };
-const TIER1_NAMES = ["ISA 예수금", "삼성증권 예수금", "키움 예수금"];
+const TIER1_NAMES = ["ISA 예수금", "삼성증권 예수금", "삼성증권 원화예수금", "삼성증권 달러예수금", "키움 예수금"];
 const TIER2_NAMES = ["CMA 예수금", "CD금리"];
 const USD_RESERVE_NAMES = ["SGOV"];
 
@@ -309,7 +309,8 @@ function App() {
   const profitKrwOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? (p - a) * h.qty : 0; };
   const costKrwOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? a * h.qty : 0; };
   // 시세 자동 평가: 시세가 있고 수동 고정(manual)이 아니면 수량×현재가(×환율)
-  const autoVal = (h) => { const q = prices[h.sym]; if (!q || !h.sym || h.manual) return null; const krw = (h.sym.startsWith("KRX:") || h.sym.includes("KRW")) ? q.p : q.p * (+fx || fxAuto || 0); return krw ? (h.qty * krw) / 10000 : null; };
+  // usdCash: 달러 예수금 — qty가 USD 잔액, 환율로 자동 환산
+  const autoVal = (h) => { if (h.usdCash) { const f = +fx || fxAuto || 0; return f ? (h.qty * f) / 10000 : null; } const q = prices[h.sym]; if (!q || !h.sym || h.manual) return null; const krw = (h.sym.startsWith("KRX:") || h.sym.includes("KRW")) ? q.p : q.p * (+fx || fxAuto || 0); return krw ? (h.qty * krw) / 10000 : null; };
   const curVal = (h) => { const a = autoVal(h); return a == null ? h.val : a; };
   const view = useMemo(() => ({ ...st, holdings: st.holdings.map((h) => ({ ...h, val: curVal(h), auto: autoVal(h) != null })) }), [st, prices, fx, fxAuto]);
   const total = useMemo(() => view.holdings.reduce((s, h) => s + h.val, 0), [view]);
@@ -342,6 +343,8 @@ function App() {
     setForm({ ...form, name: "", sym: "", qty: "", price: "", memo: "" });
   };
   const editVal = (ix, n) => { const hs = [...st.holdings]; hs[ix] = { ...hs[ix], val: n, manual: true }; saveDebounced({ ...st, holdings: hs, baseDate: today() }); };
+  // 달러 예수금의 USD 잔액 수정: qty = USD, val은 환율 환산 스냅숏
+  const editUsdQty = (ix, q) => { const hs = [...st.holdings]; const f = +fx || fxAuto || 0; hs[ix] = { ...hs[ix], qty: q, val: f ? Math.round(q * f) / 10000 : hs[ix].val }; saveDebounced({ ...st, holdings: hs, baseDate: today() }); };
   const resetAuto = (ix) => { const hs = [...st.holdings]; delete hs[ix].manual; save({ ...st, holdings: hs }); };
   const editLiving = (k, v) => saveDebounced({ ...st, living: { ...st.living, [k]: +v || 0 } });
   // 평가금 표시·입력 단위 토글: "만"(만원, 소수) ⇄ "원"(1원 단위, 콤마)
@@ -408,8 +411,12 @@ function App() {
                     {h.avg && <span className="muted"> · 평단 {h.avg}{h.usdAvg ? " (" + h.usdAvg + ")" : ""}</span>}
                     {pnlOf(h) != null && <span style={{ color: pnlOf(h) >= 0 ? "#E5484D" : "#3E7BFA" }}> · 수익률 {(pnlOf(h) >= 0 ? "+" : "") + pnlOf(h).toFixed(2)}% ({profitKrwOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(profitKrwOf(h))).toLocaleString()})</span>}
                     {fxPlOf(h) != null && <span className="muted" style={{ display: "block", fontSize: 10 }}>주가 {stockPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(stockPlOf(h))).toLocaleString()} · 환차 {fxPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(fxPlOf(h))).toLocaleString()}</span>}
-                  </div></td><td className="n">{h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n"><input style={{ width: unit === "원" ? 112 : 80 }} inputMode="numeric" value={unit === "원" ? Math.round(h.val * 10000).toLocaleString("ko-KR") : (h.auto ? Math.round(h.val * 10) / 10 : h.val)} onChange={(e) => { if (unit === "원") { const d = e.target.value.replace(/[^0-9]/g, ""); editVal(h.ix, d ? +d / 10000 : 0); } else { editVal(h.ix, parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0); } }} />
-                  <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>{unit === "원" ? manFmt(h.val) : "₩" + Math.round(h.val * 10000).toLocaleString()}{isUsdQuoted(h) && prices[h.sym] ? <span className="muted"> · ${(h.qty * prices[h.sym].p).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> : null}</div>{h.auto ? <div className="muted" style={{ fontSize: 10 }}>자동</div> : h.manual && prices[h.sym] ? <div style={{ fontSize: 10 }}><a href="#" style={{ color: "#F2B84B" }} onClick={(e) => { e.preventDefault(); resetAuto(h.ix); }}>수동 → 자동</a></div> : null}</td><td className="n">{((h.val / total) * 100).toFixed(1)}%</td></tr>);
+                  </div></td><td className="n">{h.usdCash ? "USD" : h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n">{h.usdCash ? <>
+                  <input style={{ width: 112 }} inputMode="decimal" key={"usd" + h.ix} defaultValue={h.qty} onChange={(e) => editUsdQty(h.ix, parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0)} />
+                  <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>$ 잔액 · {money(h.val)}</div>
+                  <div className="muted" style={{ fontSize: 10 }}>환율 자동 환산</div>
+                </> : <><input style={{ width: unit === "원" ? 112 : 80 }} inputMode="numeric" value={unit === "원" ? Math.round(h.val * 10000).toLocaleString("ko-KR") : (h.auto ? Math.round(h.val * 10) / 10 : h.val)} onChange={(e) => { if (unit === "원") { const d = e.target.value.replace(/[^0-9]/g, ""); editVal(h.ix, d ? +d / 10000 : 0); } else { editVal(h.ix, parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0); } }} />
+                  <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>{unit === "원" ? manFmt(h.val) : "₩" + Math.round(h.val * 10000).toLocaleString()}{isUsdQuoted(h) && prices[h.sym] ? <span className="muted"> · ${(h.qty * prices[h.sym].p).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> : null}</div>{h.auto ? <div className="muted" style={{ fontSize: 10 }}>자동</div> : h.manual && prices[h.sym] ? <div style={{ fontSize: 10 }}><a href="#" style={{ color: "#F2B84B" }} onClick={(e) => { e.preventDefault(); resetAuto(h.ix); }}>수동 → 자동</a></div> : null}</>}</td><td className="n">{((h.val / total) * 100).toFixed(1)}%</td></tr>);
   const [ledgerView, setLedgerView] = useState("계좌별");
   const groupOf = (h) => h.type === "묶임" ? "묶인 자산 (청약·적금)" : h.type === "현금" ? (h.sym === "SGOV" ? "현금성 ETF (SGOV)" : "예수금·현금") : h.type === "코인" ? "코인" : h.type === "대체" ? "대체 (금·엔)" : h.sym && h.sym.startsWith("KRX:") ? (h.name.includes("반도체") ? "국내상장 섹터 ETF" : "국내상장 미국지수 ETF") : "미국 주식";
   const GROUPS = ["예수금·현금", "현금성 ETF (SGOV)", "국내상장 미국지수 ETF", "국내상장 섹터 ETF", "미국 주식", "대체 (금·엔)", "코인", "묶인 자산 (청약·적금)"];
@@ -572,7 +579,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:35</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:44</div>
     </div>
   );
 }
