@@ -293,6 +293,9 @@ function App() {
     setLoaded(true);
   })(); }, []);
   const save = async (next) => { setSt(next); try { await window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } } };
+  // 타이핑 중 키 입력마다 시트로 쏘면 응답 순서가 뒤섞여 예전 값이 저장됨 → 입력 멈춘 뒤 1회만 전송
+  const postTimer = React.useRef(null);
+  const saveDebounced = (next) => { setSt(next); try { window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { clearTimeout(postTimer.current); setSyncMsg("입력 중…"); postTimer.current = setTimeout(async () => { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } }, 900); } };
 
   const avgOf = (h) => { if (!h.avg) return null; const n = parseFloat(String(h.avg).replace(/[^0-9.]/g, "")); return n || null; };
   const isUsdQuoted = (h) => h.sym && !h.sym.startsWith("KRX:") && !h.sym.includes("KRW") && !["JPY=X", "GC=F"].includes(h.sym);
@@ -338,9 +341,12 @@ function App() {
     save({ ...st, holdings: hs, baseDate: today(), trades: [{ d: today(), side: form.side, acct: form.acct, name: form.name, qty, price: unit + price, amt, memo: form.memo.trim() }, ...st.trades] });
     setForm({ ...form, name: "", sym: "", qty: "", price: "", memo: "" });
   };
-  const editVal = (ix, v) => { const hs = [...st.holdings]; hs[ix] = { ...hs[ix], val: +v || 0, manual: true }; save({ ...st, holdings: hs, baseDate: today() }); };
+  const editVal = (ix, n) => { const hs = [...st.holdings]; hs[ix] = { ...hs[ix], val: n, manual: true }; saveDebounced({ ...st, holdings: hs, baseDate: today() }); };
   const resetAuto = (ix) => { const hs = [...st.holdings]; delete hs[ix].manual; save({ ...st, holdings: hs }); };
-  const editLiving = (k, v) => save({ ...st, living: { ...st.living, [k]: +v || 0 } });
+  const editLiving = (k, v) => saveDebounced({ ...st, living: { ...st.living, [k]: +v || 0 } });
+  // 평가금 표시·입력 단위 토글: "만"(만원, 소수) ⇄ "원"(1원 단위, 콤마)
+  const [unit, setUnit] = useState(localStorage.getItem("valUnit") || "원");
+  const toggleUnit = () => { const u = unit === "만" ? "원" : "만"; setUnit(u); localStorage.setItem("valUnit", u); };
   const [nlk, setNlk] = useState(""); const [nlv, setNlv] = useState("");
   const addLiving = () => { if (!nlk.trim()) return; save({ ...st, living: { ...st.living, [nlk.trim()]: +nlv || 0 } }); setNlk(""); setNlv(""); };
   const delLiving = (k) => save({ ...st, living: Object.fromEntries(Object.entries(st.living).filter(([x]) => x !== k)) });
@@ -399,8 +405,8 @@ function App() {
                     {h.avg && <span className="muted"> · 평단 {h.avg}{h.usdAvg ? " (" + h.usdAvg + ")" : ""}</span>}
                     {pnlOf(h) != null && <span style={{ color: pnlOf(h) >= 0 ? "#E5484D" : "#3E7BFA" }}> · 수익률 {(pnlOf(h) >= 0 ? "+" : "") + pnlOf(h).toFixed(2)}% ({profitKrwOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(profitKrwOf(h))).toLocaleString()})</span>}
                     {fxPlOf(h) != null && <span className="muted" style={{ display: "block", fontSize: 10 }}>주가 {stockPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(stockPlOf(h))).toLocaleString()} · 환차 {fxPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(fxPlOf(h))).toLocaleString()}</span>}
-                  </div></td><td className="n">{h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n"><input value={h.auto ? Math.round(h.val * 10) / 10 : h.val} onChange={(e) => editVal(h.ix, e.target.value)} />
-                  <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>₩{Math.round(h.val * 10000).toLocaleString()}{isUsdQuoted(h) && prices[h.sym] ? <span className="muted"> · ${(h.qty * prices[h.sym].p).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> : null}</div>{h.auto ? <div className="muted" style={{ fontSize: 10 }}>자동</div> : h.manual && prices[h.sym] ? <div style={{ fontSize: 10 }}><a href="#" style={{ color: "#F2B84B" }} onClick={(e) => { e.preventDefault(); resetAuto(h.ix); }}>수동 → 자동</a></div> : null}</td><td className="n">{((h.val / total) * 100).toFixed(1)}%</td></tr>);
+                  </div></td><td className="n">{h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n"><input style={{ width: unit === "원" ? 112 : 80 }} inputMode="numeric" value={unit === "원" ? Math.round(h.val * 10000).toLocaleString("ko-KR") : (h.auto ? Math.round(h.val * 10) / 10 : h.val)} onChange={(e) => { if (unit === "원") { const d = e.target.value.replace(/[^0-9]/g, ""); editVal(h.ix, d ? +d / 10000 : 0); } else { editVal(h.ix, parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0); } }} />
+                  <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>{unit === "원" ? fmt(h.val) + "만" : "₩" + Math.round(h.val * 10000).toLocaleString()}{isUsdQuoted(h) && prices[h.sym] ? <span className="muted"> · ${(h.qty * prices[h.sym].p).toLocaleString(undefined, { maximumFractionDigits: 2 })}</span> : null}</div>{h.auto ? <div className="muted" style={{ fontSize: 10 }}>자동</div> : h.manual && prices[h.sym] ? <div style={{ fontSize: 10 }}><a href="#" style={{ color: "#F2B84B" }} onClick={(e) => { e.preventDefault(); resetAuto(h.ix); }}>수동 → 자동</a></div> : null}</td><td className="n">{((h.val / total) * 100).toFixed(1)}%</td></tr>);
   const [ledgerView, setLedgerView] = useState("계좌별");
   const groupOf = (h) => h.type === "묶임" ? "묶인 자산 (청약·적금)" : h.type === "현금" ? (h.sym === "SGOV" ? "현금성 ETF (SGOV)" : "예수금·현금") : h.type === "코인" ? "코인" : h.type === "대체" ? "대체 (금·엔)" : h.sym && h.sym.startsWith("KRX:") ? (h.name.includes("반도체") ? "국내상장 섹터 ETF" : "국내상장 미국지수 ETF") : "미국 주식";
   const GROUPS = ["예수금·현금", "현금성 ETF (SGOV)", "국내상장 미국지수 ETF", "국내상장 섹터 ETF", "미국 주식", "대체 (금·엔)", "코인", "묶인 자산 (청약·적금)"];
@@ -496,13 +502,13 @@ function App() {
         </div>
         <div className="card">
           <div style={{ marginBottom: 10 }}>{["계좌별", "자산별"].map((v) => <button key={v} className="chip" style={{ border: 0, cursor: "pointer", marginRight: 6, color: ledgerView === v ? "#F2B84B" : "#E6E9EF", background: ledgerView === v ? "#3a2f18" : "#2B3A52" }} onClick={() => setLedgerView(v)}>{v}</button>)}</div>
-          <table><thead><tr><th>종목</th><th className="n">수량</th><th className="n">평가(만)</th><th className="n">비중</th></tr></thead>
+          <table><thead><tr><th>종목</th><th className="n">수량</th><th className="n" style={{ cursor: "pointer", userSelect: "none", color: "#F2B84B" }} onClick={toggleUnit} title="클릭하면 만원 ⇄ 원 전환">평가({unit}) ⇄</th><th className="n">비중</th></tr></thead>
             <tbody>{(ledgerView === "계좌별" ? ACCTS.map((g) => ({ g, rows: view.holdings.map((h, ix) => ({ ...h, ix })).filter((h) => h.acct === g) })) : GROUPS.map((g) => ({ g, rows: view.holdings.map((h, ix) => ({ ...h, ix })).filter((h) => groupOf(h) === g) }))).map(({ g, rows }) => { if (!rows.length) return null; const sub = rows.reduce((s2, h) => s2 + h.val, 0); const dep = g === "예수금·현금" ? rows.filter((h) => h.name.includes("예수금") || h.name.includes("입출금")).reduce((s2, h) => s2 + h.val, 0) : 0; const gp = rows.reduce((s2, h) => s2 + profitKrwOf(h), 0); return (
               <React.Fragment key={g}>
-                <tr><td className="acct" colSpan="2">{g}{dep > 0 && <span style={{ marginLeft: 8, color: "#F2B84B" }}>총 예수금 ₩{Math.round(dep * 10000).toLocaleString()}</span>}{Math.abs(gp) > 1 && <span style={{ marginLeft: 8, color: gp >= 0 ? "#E5484D" : "#3E7BFA" }}>{gp >= 0 ? "+" : "−"}₩{Math.abs(Math.round(gp)).toLocaleString()}</span>}</td><td className="n acct">{fmt(sub)}만</td><td className="n acct">{((sub / total) * 100).toFixed(1)}%</td></tr>
+                <tr><td className="acct" colSpan="2">{g}{dep > 0 && <span style={{ marginLeft: 8, color: "#F2B84B" }}>총 예수금 ₩{Math.round(dep * 10000).toLocaleString()}</span>}{Math.abs(gp) > 1 && <span style={{ marginLeft: 8, color: gp >= 0 ? "#E5484D" : "#3E7BFA" }}>{gp >= 0 ? "+" : "−"}₩{Math.abs(Math.round(gp)).toLocaleString()}</span>}</td><td className="n acct">{unit === "원" ? "₩" + Math.round(sub * 10000).toLocaleString("ko-KR") : fmt(sub) + "만"}</td><td className="n acct">{((sub / total) * 100).toFixed(1)}%</td></tr>
                 {rows.map(HRow)}
               </React.Fragment>); })}</tbody></table>
-          <p className="muted" style={{ marginTop: 10 }}>시세가 있는 종목은 수량 × 현재가(× 환율)로 평가금이 자동 계산됩니다("자동" 표시, 영업일 기준 구글 시세). 틀렸으면 칸을 직접 고치면 그 값으로 고정되고, "수동 → 자동"으로 되돌릴 수 있습니다. 예수금·국내 비상장 항목은 직접 입력.</p>
+          <p className="muted" style={{ marginTop: 10 }}>시세가 있는 종목은 수량 × 현재가(× 환율)로 평가금이 자동 계산됩니다("자동" 표시, 영업일 기준 구글 시세). 틀렸으면 칸을 직접 고치면 그 값으로 고정되고, "수동 → 자동"으로 되돌릴 수 있습니다. 예수금·국내 비상장 항목은 직접 입력. <b style={{ color: "#F2B84B" }}>"평가({unit}) ⇄" 헤더를 클릭하면 만원 ⇄ 원(1원 단위·콤마) 표시가 전환</b>되고, 원 모드에선 콤마 포함 원 단위로 그대로 입력하면 됩니다. 입력을 멈추면 1초 뒤 자동 저장됩니다.</p>
         </div>
       </>)}
 
@@ -563,7 +569,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:08</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:23</div>
     </div>
   );
 }
