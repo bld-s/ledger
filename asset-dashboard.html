@@ -196,9 +196,10 @@ function TVChart({ sym }) {
 
 // ───────── 배분 센터 (성장:인컴:지수 게이지 + 실탄) ─────────
 const ALLOC_TARGET = { 성장: 50, 인컴: 30, 지수: 20 };
-const ALLOC_EXACT = { UNH: "성장", AMZN: "성장", AVGO: "성장", NVO: "성장", BTC: "성장", "ETH 스테이킹": "성장", JPM: "인컴", O: "인컴", MO: "인컴", KHC: "인컴" };
-const ALLOC_INCL = [["배당다우", "인컴"], ["S&P500", "지수"], ["나스닥100", "지수"], ["반도체", "성장"]];
-const bucketOf = (h) => { if (h.type !== "주식" && h.type !== "코인") return null; if (ALLOC_EXACT[h.name]) return ALLOC_EXACT[h.name]; for (const [k, b] of ALLOC_INCL) if (h.name.includes(k)) return b; return "성장"; };
+// 성장=공격수(개별주·비지수 ETF·코인), 인컴=수비형 미드필더(배당주), 지수=수비수(지수추종 ETF·엔·금), 현금성(청약·적금·SGOV·CD·예수금)은 집계 제외
+const ALLOC_EXACT = { UNH: "성장", AMZN: "성장", AVGO: "성장", NVO: "성장", JPM: "성장", BTC: "성장", "ETH 스테이킹": "성장", O: "인컴", MO: "인컴", KHC: "인컴" };
+const ALLOC_INCL = [["반도체", "성장"], ["배당다우", "인컴"], ["S&P500", "지수"], ["나스닥100", "지수"], ["엔선물", "지수"], ["금현물", "지수"]];
+const bucketOf = (h) => { if (h.type === "현금" || h.type === "묶임") return null; if (ALLOC_EXACT[h.name]) return ALLOC_EXACT[h.name]; for (const [k, b] of ALLOC_INCL) if (h.name.includes(k)) return b; return h.type === "대체" ? "지수" : "성장"; };
 const TIER1_NAMES = ["ISA 예수금", "삼성증권 예수금", "삼성증권 원화예수금", "삼성증권 달러예수금", "키움 예수금"];
 const TIER2_NAMES = ["CMA 예수금", "CD금리"];
 const USD_RESERVE_NAMES = ["SGOV"];
@@ -215,11 +216,11 @@ function AllocCenter({ holdings, money }) {
   const worst = rows.slice().sort((a, b) => a.gap - b.gap)[0];
   return (
     <div className="card">
-      <div className="eyebrow" style={{ marginBottom: 8 }}>배분 센터 · 목표 성장5 : 인컴3 : 지수2 (금·엔·현금·묶임 제외)</div>
+      <div className="eyebrow" style={{ marginBottom: 8 }}>배분 센터 · 목표 성장5 : 인컴3 : 지수2 (현금성 제외 · 엔·금은 지수 포함)</div>
       {rows.map(({ k, cur, tgt, gap, val }) => (
         <div key={k} style={{ marginBottom: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontFamily: "ui-monospace,monospace" }}>
-            <span style={{ color: COL[k] }}>■ {k} {money(val)}</span>
+            <span style={{ color: COL[k] }}>■ {k} <span className="muted" style={{ fontSize: 11 }}>{{ 성장: "공격수", 인컴: "수비형 MF", 지수: "수비수" }[k]}</span> {money(val)}</span>
             <span>{cur.toFixed(1)}% / 목표 {tgt}% <b style={{ color: gap >= 0 ? "#E5484D" : "#3E7BFA" }}>({gap >= 0 ? "+" : ""}{gap.toFixed(1)}%p)</b></span>
           </div>
           <div style={{ position: "relative", height: 10, background: "#101826", borderRadius: 5, overflow: "hidden", marginTop: 4 }}>
@@ -227,7 +228,8 @@ function AllocCenter({ holdings, money }) {
             <div style={{ position: "absolute", left: tgt + "%", top: 0, bottom: 0, width: 2, background: "#E6E9EF" }} />
           </div>
         </div>))}
-      <p className="muted" style={{ margin: "4px 0 10px" }}>흰 선 = 목표 비율. 지금 가장 부족한 버킷: <b style={{ color: COL[worst.k] }}>{worst.k}</b> ({worst.gap.toFixed(1)}%p) → 급락일 매수 검토 1순위. 미분류 신규 종목은 성장으로 집계(코드 상단 ALLOC_EXACT에서 조정).</p>
+      <p className="muted" style={{ margin: "4px 0 6px" }}>흰 선 = 목표 비율. 지금 가장 부족한 버킷: <b style={{ color: COL[worst.k] }}>{worst.k}</b> ({worst.gap.toFixed(1)}%p) → 급락일 매수 검토 1순위. 미분류 신규 종목은 성장으로 집계(코드 상단 ALLOC_EXACT에서 조정).</p>
+      <p className="muted" style={{ margin: "0 0 10px" }}>그외 현금성 <b style={{ color: "#8FA3BF" }}>{money(holdings.filter((h) => h.type === "현금" || h.type === "묶임").reduce((s, h) => s + h.val, 0))}</b> — 청약·적금·예수금·SGOV·CD금리 (배분 집계 제외)</p>
       <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 13, borderTop: "1px solid #22304a", paddingTop: 10, lineHeight: 1.8 }}>
         실탄(즉시) <b style={{ color: "#F2B84B" }}>₩{Math.round(t1 * 10000).toLocaleString()}</b> <span className="muted">증권 예수금</span>
         <span style={{ marginLeft: 12 }}>2선 ₩{Math.round(t2 * 10000).toLocaleString()} <span className="muted">CMA·CD금리(이동·매도 필요)</span></span>
@@ -579,7 +581,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:44</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 16:55</div>
     </div>
   );
 }
