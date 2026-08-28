@@ -40,6 +40,7 @@ const INIT = {
     { acct: "묶인자산", name: "청년미래적금", sym: "", qty: 1, val: 50, type: "묶임" },
   ],
   trades: [],
+  lastSettled: "", // 마지막 월정산 연월 "YYYY-MM" — 잔액 실측 정산 완료 표시
 };
 const ACCTS = ["미래에셋 CMA", "미래에셋 ISA", "삼성증권", "키움", "코인", "은행", "묶인자산"];
 const TYPE_COLOR = { 주식: "#F2B84B", 현금: "#8FA3BF", 대체: "#C98FE0", 코인: "#F07B4F", 묶임: "#4F5E75" };
@@ -344,6 +345,26 @@ function App() {
   const addLiving = () => { if (!nlk.trim()) return; save({ ...st, living: { ...st.living, [nlk.trim()]: +nlv || 0 } }); setNlk(""); setNlv(""); };
   const delLiving = (k) => save({ ...st, living: Object.fromEntries(Object.entries(st.living).filter(([x]) => x !== k)) });
 
+  // ───────── 월 정산 (잔액 실측 · 오차 0 원칙: 입력된 실제 잔액만 정답) ─────────
+  const [settleIn, setSettleIn] = useState("");
+  const ymNow = today().slice(0, 7);
+  const settleWindow = +today().slice(8, 10) >= 26;
+  const settleDue = settleWindow && st.lastSettled !== ymNow;
+  const settle = () => {
+    const bal = parseFloat(settleIn);
+    if (isNaN(bal) || bal < 0) return alert("KB 입출금 실제 잔액을 만원 단위 숫자로 입력하세요 (예: 554)");
+    const hs = st.holdings.map((h) => ({ ...h }));
+    // KB 주거래 통장: "KB" 포함 우선, 구버전 원장은 "입출금" (사업용 "개인사업자 입출금통장"은 제외)
+    const bank = hs.find((h) => h.acct === "은행" && h.name.includes("KB")) || hs.find((h) => h.acct === "은행" && h.name === "입출금");
+    if (!bank) return alert("은행 계좌에서 KB 주거래 통장을 찾을 수 없습니다");
+    const diff = Math.round((bal - bank.val) * 10) / 10;
+    bank.val = bal;
+    const saving = hs.find((h) => h.name.includes("청년미래적금"));
+    if (saving) saving.val += 50; // 자동이체 고정액 → 오차 없음
+    save({ ...st, holdings: hs, baseDate: today(), lastSettled: ymNow, trades: [{ d: today(), side: "정산", acct: "은행", name: `월정산 ${ymNow} (변동 ${diff >= 0 ? "+" : "−"}${fmt(Math.abs(diff))}만)`, qty: "", price: `잔액 실측 ${fmt(bal)}만`, amt: diff, memo: "월정산 · 잔액 실측" + (saving ? " · 청년미래적금 +50만 자동 반영" : "") }, ...st.trades] });
+    setSettleIn("");
+  };
+
   const loadChart = async () => {
     setChartMsg("불러오는 중…"); setCandles(null);
     try {
@@ -429,6 +450,16 @@ function App() {
       <div className="tabs">{["원장", "히트맵", "매매", "차트", "시황"].map((t) => <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}</div>
 
       {tab === "원장" && (<>
+        {settleDue && <div className="card" style={{ borderColor: "#F2B84B" }}>
+          <div className="eyebrow" style={{ marginBottom: 8 }}>월 정산 · 잔액 실측</div>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>{+ymNow.slice(5, 7)}월 정산 — KB 입출금 현재 잔액 입력</div>
+          <div style={{ display: "flex", gap: 8, maxWidth: 420 }}>
+            <input className="in" type="number" step="any" placeholder="실제 잔액 (만원)" value={settleIn} onChange={(e) => setSettleIn(e.target.value)} />
+            <button className="btn" onClick={settle}>확인</button>
+          </div>
+          <p className="muted" style={{ marginTop: 6 }}>은행 앱의 실제 잔액을 그대로 입력하세요(추정 금지). 차액은 체결 내역에 "월정산 {ymNow}"으로 기록되고, 청년미래적금 +50만이 함께 반영됩니다.</p>
+        </div>}
+        {settleWindow && !settleDue && <div className="card"><div style={{ color: "#F2B84B", fontWeight: 600 }}>{+ymNow.slice(5, 7)}월 정산 완료 ✓</div></div>}
         <AllocCenter holdings={view.holdings} />
         <div className="card">
           <div className="eyebrow" style={{ marginBottom: 8 }}>PC·모바일 동기화 (구글 시트)</div>
@@ -498,7 +529,7 @@ function App() {
         </div>
         <div className="card">
           <div className="eyebrow">최근 체결</div>
-          {st.trades.length === 0 ? <p className="muted">아직 기록 없음</p> : <table><tbody>{st.trades.map((t, i) => <tr key={i}><td>{t.d}</td><td style={{ color: t.side === "매수" ? "#E5484D" : "#3E7BFA" }}>{t.side}</td><td>{t.acct} · {t.name}</td><td className="n">{t.qty}주 × {t.price}</td><td className="n">{fmt(t.amt)}만</td></tr>).flatMap((row, i2) => { const t = st.trades[i2]; return t.memo ? [row, <tr key={"m" + i2}><td colSpan="5" className="muted" style={{ fontSize: 12, paddingTop: 0 }}>└ {t.memo}</td></tr>] : [row]; })}</tbody></table>}
+          {st.trades.length === 0 ? <p className="muted">아직 기록 없음</p> : <table><tbody>{st.trades.map((t, i) => <tr key={i}><td>{t.d}</td><td style={{ color: t.side === "매수" ? "#E5484D" : t.side === "정산" ? "#F2B84B" : "#3E7BFA" }}>{t.side}</td><td>{t.acct} · {t.name}</td><td className="n">{t.side === "정산" ? t.price : <>{t.qty}주 × {t.price}</>}</td><td className="n">{fmt(t.amt)}만</td></tr>).flatMap((row, i2) => { const t = st.trades[i2]; return t.memo ? [row, <tr key={"m" + i2}><td colSpan="5" className="muted" style={{ fontSize: 12, paddingTop: 0 }}>└ {t.memo}</td></tr>] : [row]; })}</tbody></table>}
         </div>
       </>)}
 
@@ -531,6 +562,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-08-28 15:56</div>
     </div>
   );
 }
