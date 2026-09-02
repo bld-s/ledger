@@ -178,6 +178,15 @@ function Heat({ holdings, prices, fx, avgOf, isUsdQuoted, pnlOf }) {
 
 
 
+// ───────── 국장 종목 사전 (이름 → 코드) · 트레이딩뷰 무료 위젯은 KRX 심볼을 거부하므로 네이버 차트로 연결 ─────────
+const KRX_DICT = {
+  "삼성전자": "005930", "SK하이닉스": "000660", "현대차": "005380", "기아": "000270", "LG에너지솔루션": "373220", "삼성바이오로직스": "207940", "셀트리온": "068270", "NAVER": "035420", "네이버": "035420", "카카오": "035720", "POSCO홀딩스": "005490", "포스코홀딩스": "005490", "LG화학": "051910", "삼성SDI": "006400", "KB금융": "105560", "신한지주": "055550", "하나금융지주": "086790", "현대모비스": "012330", "삼성물산": "028260", "SK이노베이션": "096770", "LG전자": "066570", "한화에어로스페이스": "012450", "HD현대중공업": "329180", "삼성생명": "032830", "메리츠금융지주": "138040", "두산에너빌리티": "034020", "크래프톤": "259960", "SK텔레콤": "017670", "KT": "030200", "KT&G": "033780", "삼성전기": "009150", "LG": "003550", "알테오젠": "196170", "에코프로비엠": "247540", "에코프로": "086520", "HLB": "028300", "리가켐바이오": "141080", "삼성전자우": "005935",
+  "KODEX 200": "069500", "TIGER 200": "102110", "KODEX 코스닥150": "229200", "KODEX 레버리지": "122630", "KODEX 200선물인버스2X": "252670", "KODEX 인버스": "114800",
+  "TIGER 미국S&P500": "360750", "TIGER 미국나스닥100": "133690", "TIGER 미국배당다우존스": "458730", "TIGER 반도체TOP10": "396500", "TIGER 미국테크TOP10": "381170", "TIGER 미국필라델피아반도체나스닥": "381180", "KODEX 미국S&P500": "379800", "KODEX 미국나스닥100": "379810", "ACE 미국S&P500": "360200", "ACE 미국나스닥100": "367380", "SOL 미국배당다우존스": "446720",
+  "ACE KRX금현물": "411060", "KODEX 골드선물(H)": "132030", "TIGER 골드선물(H)": "319640", "KODEX 은선물(H)": "144600", "TIGER 일본엔선물": "292560", "KODEX 미국달러선물": "261240", "KODEX CD금리액티브": "459580", "TIGER CD금리투자KIS": "357870", "KODEX 단기채권": "153130",
+};
+const krxMatches = (q) => { const k = q.trim().toLowerCase().replace(/\s+/g, ""); if (!k) return []; return Object.entries(KRX_DICT).filter(([n, c]) => n.toLowerCase().replace(/\s+/g, "").includes(k) || c === k.toUpperCase()).slice(0, 10); };
+
 function NaverChart({ code }) {
   const [p, setP] = useState("day");
   return (<div style={{ textAlign: "center", padding: 8 }}>
@@ -247,6 +256,9 @@ function App() {
   const [fx, setFx] = useState(localStorage.getItem("fx") || "");
   const [fxAuto, setFxAuto] = useState(null);
   const [chartSym, setChartSym] = useState("AMZN");
+  const [symQ, setSymQ] = useState("");
+  // 국장: 이름/6자리코드 → KRX:코드(네이버 차트) · 미장: 티커 대문자(트레이딩뷰)
+  const goSym = (q) => { const t = q.trim(); if (!t) return; if (/^[0-9A-Za-z]{6}$/.test(t) && /\d/.test(t)) { setChartSym("KRX:" + t.toUpperCase()); setSymQ(""); return; } const m = krxMatches(t); if (m.length) { setChartSym("KRX:" + m[0][1]); setSymQ(""); return; } if (/[가-힣]/.test(t)) { alert("종목 사전에 없는 국장 종목입니다. 6자리 종목코드(예: 005930)로 입력하세요 — 코드는 네이버증권 검색으로 확인"); return; } setChartSym(t.toUpperCase()); setSymQ(""); };
   const [tdKey, setTdKey] = useState("");
   const [csv, setCsv] = useState("");
   const [candles, setCandles] = useState(null);
@@ -513,9 +525,9 @@ function App() {
             </div>); })()}
         </div>
         <div className="card">
-          <div className="eyebrow">청년미래적금 (D-1069)</div>
+          <div className="eyebrow">청년미래적금 (만기 2029-07-27 · D-{Math.max(0, Math.ceil((new Date("2029-07-27") - new Date()) / 86400000))}) · 2026-09 기준 확인</div>
           <p className="muted" style={{ marginTop: 6 }}>KB국민 · 우대형(정부기여금 12%) · 3년 만기 · 월 50만 납입 · 비과세.<br />
-          현재 금리: 기본 5% + 달성 우대 1%p(거래감사·소득플러스) = <b style={{ color: "#F2B84B" }}>연 6%</b>. 미달성 2%p → 급여이체(1/12회)·출금실적(1/12회)·청년재무상담(미수료) 채우면 <b style={{ color: "#F2B84B" }}>최대 연 8%</b>.<br />
+          현재 금리: 기본 5% + 달성 우대 1%p(거래감사 0.5 + 소득기준 0.5) = <b style={{ color: "#F2B84B" }}>연 6%</b>. 미달성 2%p → 급여이체 1.0%p(1/12회)·출금실적 0.8%p(1/12회)·청년재무상담 0.2%p(미수료) 채우면 <b style={{ color: "#F2B84B" }}>최대 연 8%</b> (KB 우대 합계 3.0%p).<br />
           만기 예상(월 50만 × 36회, 원금 1,800만): 연 6% 시 이자 약 166만 + 기여금 216만 = <b>약 2,182만</b> / 연 8% 시 이자 약 222만 + 기여금 216만 = <b>약 2,238만</b>. 우대 2%p 차이 = 약 56만원 → 급여이체·출금 실적은 자동이체 걸어두면 사실상 공짜 돈, 재무상담도 이수 추천.</p>
         </div>
         <div className="card">
@@ -561,16 +573,21 @@ function App() {
 
       {tab === "차트" && (<>
         <div className="card" style={{ padding: 8 }}>
-          <div className="eyebrow" style={{ margin: "6px 8px" }}>트레이딩뷰 차트 (국내 ETF 포함 · 캔들·MA·RSI·거래량)</div>
+          <div className="eyebrow" style={{ margin: "6px 8px" }}>차트 · 국장 = 네이버증권 / 미장·코인 = 트레이딩뷰 (캔들·MA·RSI·거래량)</div>
+          <div style={{ margin: "0 8px 8px", display: "flex", gap: 6, maxWidth: 560 }}>
+            <input className="in" placeholder="종목 검색: 삼성전자 · 005930 · NVDA" value={symQ} onChange={(e) => setSymQ(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") goSym(symQ); }} />
+            <button className="btn" onClick={() => goSym(symQ)}>차트</button>
+          </div>
+          {symQ.trim() && krxMatches(symQ).length > 0 && <div style={{ margin: "0 8px 8px" }}>{krxMatches(symQ).map(([n, c]) => <button key={c} className="chip" style={{ border: 0, cursor: "pointer", color: "#F2B84B" }} onClick={() => { setChartSym("KRX:" + c); setSymQ(""); }}>{n} ({c})</button>)}</div>}
           <div style={{ margin: "0 8px 8px" }}>{[...new Map(st.holdings.filter((h) => h.sym).map((h) => [h.sym, h.name])).entries()].map(([sy, nm]) => <button key={sy} className="chip" style={{ border: 0, cursor: "pointer", color: chartSym === sy ? "#F2B84B" : "#E6E9EF" }} onClick={() => setChartSym(sy)}>{sy.startsWith("KRX:") ? nm + " (" + sy.slice(4) + ")" : nm}</button>)}</div>
           {chartSym.startsWith("KRX:") ? <NaverChart code={chartSym.slice(4)} /> : <TVChart sym={chartSym} />}
-          <div className="legend" style={{ margin: "8px" }}>차트 안에서 종목 검색도 됩니다. 매물대(Volume Profile)는 트레이딩뷰 유료 기능이라 여기엔 없고, 아래 자체 차트(미국주식·코인·CSV)에서 볼 수 있습니다.</div>
+          <div className="legend" style={{ margin: "8px" }}>국장 종목은 위 검색창에 이름(삼성전자)이나 6자리 코드(005930)를 넣으면 네이버 차트가 뜹니다 — 트레이딩뷰 무료 위젯은 국장 심볼을 지원하지 않습니다. 미국주식은 트레이딩뷰 차트 안에서 검색도 됩니다. 매물대(Volume Profile)는 트레이딩뷰 유료 기능이라 여기엔 없고, 아래 자체 차트(미국주식·코인·CSV)에서 볼 수 있습니다.</div>
         </div>
 
         <div className="card">
           <div className="form">
             <select className="in" value={chartSym} onChange={(e) => setChartSym(e.target.value)}>{[...new Set(st.holdings.filter((h) => h.sym).map((h) => h.sym)), "SPY", "QQQ", "^VIX"].map((s) => <option key={s}>{s}</option>)}</select>
-            <input className="in" placeholder="직접 입력 (예: NVDA)" onChange={(e) => e.target.value && setChartSym(e.target.value.toUpperCase())} />
+            <input className="in" placeholder="미국 티커 (예: NVDA) — 국장은 위 검색창" onKeyDown={(e) => { if (e.key === "Enter") goSym(e.target.value); }} onBlur={(e) => e.target.value.trim() && goSym(e.target.value)} />
             <input className="in" placeholder="Twelve Data 키 (선택)" value={tdKey} onChange={(e) => { setTdKey(e.target.value); window.storage?.set("tdkey", e.target.value).catch(() => {}); }} />
             <button className="btn" onClick={loadChart}>불러오기</button>
           </div>
@@ -588,7 +605,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-02 17:59</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-02 18:23</div>
     </div>
   );
 }
