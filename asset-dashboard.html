@@ -3947,6 +3947,7 @@ const KRX_ALL = `451060|1Q 200액티브
 003280|흥아해운
 037440|희림
 238490|힘스`.split("\n").map((l) => { const i = l.indexOf("|"); return [l.slice(i + 1), l.slice(0, i)]; });
+const krxNameOf = (code) => { const r = (Array.isArray(KRX_ALL) ? KRX_ALL : []).find(([n, c]) => c === code); if (r) return r[0]; const d = Object.entries(KRX_DICT).find(([n, c]) => c === code); return d ? d[0] : null; };
 const krxMatches = (q) => { const k = q.trim().toLowerCase().replace(/\s+/g, ""); if (!k) return []; const hit = (n, c) => n.toLowerCase().replace(/\s+/g, "").includes(k) || c.toLowerCase() === k; const dict = Object.entries(KRX_DICT).filter(([n, c]) => hit(n, c)); const all = KRX_ALL.filter(([n, c]) => hit(n, c) && !dict.some(([, dc]) => dc === c)); const exact = (a) => a.sort((x, y) => (x[0].toLowerCase().replace(/\s+/g, "") === k ? -1 : 0) - (y[0].toLowerCase().replace(/\s+/g, "") === k ? -1 : 0) || x[0].length - y[0].length); return exact([...dict, ...all]).slice(0, 12); };
 const krxMatchesOld = (q) => { const k = q.trim().toLowerCase().replace(/\s+/g, ""); if (!k) return []; return Object.entries(KRX_DICT).filter(([n, c]) => n.toLowerCase().replace(/\s+/g, "").includes(k) || c === k.toUpperCase()).slice(0, 10); };
 
@@ -4470,6 +4471,12 @@ function App() {
           </div>
           {symQ.trim() && krxMatches(symQ).length > 0 && <div style={{ margin: "0 8px 8px" }}>{krxMatches(symQ).map(([n, c]) => <button key={c} className="chip" style={{ border: 0, cursor: "pointer", color: "#F2B84B" }} onClick={() => { setChartSym("KRX:" + c); setSymQ(""); }}>{n} ({c})</button>)}</div>}
           <div style={{ margin: "0 8px 8px" }}>{[...new Map(st.holdings.filter((h) => h.sym).map((h) => [h.sym, h.name])).entries()].map(([sy, nm]) => <button key={sy} className="chip" style={{ border: 0, cursor: "pointer", color: chartSym === sy ? "#F2B84B" : "#E6E9EF" }} onClick={() => setChartSym(sy)}>{sy.startsWith("KRX:") ? nm + " (" + sy.slice(4) + ")" : nm}</button>)}</div>
+          {(() => { const isK = chartSym.startsWith("KRX:"); const code = isK ? chartSym.slice(4) : null; const held = st.holdings.find((h) => h.sym === chartSym || h.name === chartSym); const nm = isK ? (krxNameOf(code) || held?.name || "종목명 미확인") : (held ? held.name : chartSym); return (
+            <div style={{ margin: "4px 8px 8px", display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 20, fontWeight: 700, color: "#F2B84B" }}>{nm}</span>
+              <span className="muted" style={{ fontFamily: "ui-monospace,monospace" }}>{isK ? `${code} · 국장 · 네이버증권 일봉` : `${chartSym} · ${chartSym.startsWith("CURRENCY:") ? "코인" : "미장"} · 트레이딩뷰`}</span>
+              {held && <span className="chip" style={{ fontSize: 11 }}>보유 · {held.acct}</span>}
+            </div>); })()}
           {chartSym.startsWith("KRX:") ? <NaverChart code={chartSym.slice(4)} /> : <TVChart sym={chartSym} />}
           <IndPanel sym={chartSym} />
           <div className="legend" style={{ margin: "8px" }}>국장 종목은 위 검색창에 이름(삼성전자)이나 6자리 코드(005930)를 넣으면 네이버 차트가 뜹니다 — 트레이딩뷰 무료 위젯은 국장 심볼을 지원하지 않습니다. 미국주식은 트레이딩뷰 차트 안에서 검색도 됩니다. 매물대(Volume Profile)는 트레이딩뷰 유료 기능이라 여기엔 없고, 아래 자체 차트(미국주식·코인·CSV)에서 볼 수 있습니다.</div>
@@ -4498,7 +4505,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-03 13:45</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-03 14:12</div>
     </div>
   );
 }
