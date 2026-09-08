@@ -4183,24 +4183,7 @@ function App() {
     if (h.name.includes("금현물") && h.sym !== "KRX:411060") { Object.assign(h, { name: "ACE KRX금현물", sym: "KRX:411060", qty: 50, avg: "₩28,997" }); delete h.manual; ch = true; }
     if (h.name.includes("엔선물") && h.sym !== "KRX:292560") { Object.assign(h, { name: "TIGER 일본엔선물", sym: "KRX:292560", qty: 180, avg: "₩8,280" }); delete h.manual; ch = true; }
     if (h.name === "예수금") { const pf = { "미래에셋 ISA": "ISA 예수금", "삼성증권": "삼성증권 예수금", "키움": "키움 예수금" }[h.acct]; if (pf) { h.name = pf; ch = true; } }
-  });
-    // 9/4 달러 사다리 1차 (CMA→삼성 100만 @1,358) — 시트에 이미 반영됐으면 건너뜀
-    if (!L.holdings.some((h) => h.sym === "CURRENCY:USDKRW")) {
-      const cma = L.holdings.find((h) => h.name === "CMA 예수금"); if (cma) cma.val = Math.round((cma.val - 100) * 10000) / 10000;
-      const si = L.holdings.findIndex((h) => h.name === "삼성증권 예수금");
-      L.holdings.splice(si + 1, 0, { acct: "삼성증권", name: "삼성증권 달러예수금 ($736.38)", sym: "CURRENCY:USDKRW", qty: 736.38, val: 100, type: "현금", avg: "₩1,358", usdAvg: "$1" });
-      L.trades = [{ d: "2026-09-04", side: "환전", acct: "삼성증권", name: "USD 환전 (CMA→삼성증권)", qty: 736.38, price: "₩1,358", amt: 100, memo: "달러 사다리 1차 · 연저점권 1,358 · 평단 1,454.7 수리 시작" }, ...(L.trades || [])];
-      ch = true;
-    }
-    // 9/7 출장비 엔화 환전 (카카오 사업자통장 200만 → 토스뱅크 ¥229,621 @871/100엔)
-    if (!L.holdings.some((h) => h.sym === "CURRENCY:JPYKRW")) {
-      const biz = L.holdings.find((h) => h.name.includes("개인사업자")); if (biz) biz.val = Math.round((biz.val - 200) * 10000) / 10000;
-      const bi = L.holdings.findIndex((h) => h.name.includes("개인사업자"));
-      L.holdings.splice((bi >= 0 ? bi : L.holdings.length - 1) + 1, 0, { acct: "은행", name: "토스뱅크 엔화 (출장비 ¥229,621 · 사업)", sym: "CURRENCY:JPYKRW", qty: 229621, val: 200, type: "현금", avg: "₩8.71" });
-      L.trades = [{ d: "2026-09-07", side: "환전", acct: "은행", name: "JPY 환전 (카카오 사업자→토스뱅크)", qty: 229621, price: "₩8.71/¥", amt: 200, memo: "출장 경비용 · 100엔=871원(연저점권) · 사업자금이라 투자 재원 아님" }, ...(L.trades || [])];
-      ch = true;
-    }
-    return ch; };
+  }); return ch; };
   const pull = async (url) => { try { setSyncMsg("시트에서 불러오는 중…"); const r = await fetch(url); const j = await r.json(); if (j.ledger) { const ch = migrate(j.ledger); setSt(j.ledger); if (ch) await fetch(url, { method: "POST", body: JSON.stringify(j.ledger) }); } else { await fetch(url, { method: "POST", body: JSON.stringify(st) }); } setPrices(j.prices||{}); if (j.fx) { setFxAuto(j.fx); setFx(String(Math.round(j.fx * 10) / 10)); localStorage.setItem("fx", String(Math.round(j.fx * 10) / 10)); } setSyncMsg("동기화됨 " + new Date().toLocaleTimeString("ko-KR")); } catch (e) { setSyncMsg("동기화 실패: " + e.message); } };
   useEffect(() => { if (syncUrl) pull(syncUrl); }, []);
 
@@ -4222,7 +4205,7 @@ function App() {
   const avgKrwOf = (h) => { const a = avgOf(h); if (!a) return null; return String(h.avg).trim().startsWith("$") ? a * fxNow() : a; };
   const priceKrwOf = (h) => { const q = prices[h.sym]; if (!q) return null; return isUsdQuoted(h) ? q.p * fxNow() : q.p; };
   const pnlOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? ((p - a) / a) * 100 : null; };
-  const stockPlOf = (h) => { if (h.sym === "CURRENCY:USDKRW") return prices[h.sym] ? 0 : null; const au = usdAvgOf(h), q = prices[h.sym]; return au && q ? (q.p - au) * h.qty * fxNow() : null; };
+  const stockPlOf = (h) => { const au = usdAvgOf(h), q = prices[h.sym]; return au && q ? (q.p - au) * h.qty * fxNow() : null; };
   const fxPlOf = (h) => { const sp2 = stockPlOf(h); return sp2 == null ? null : profitKrwOf(h) - sp2; };
   const profitKrwOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? (p - a) * h.qty : 0; };
   // 달러 표시 금액: 달러예수금=잔액 그대로, 달러 시세 종목=수량×현재가, 시세 없으면 평가액을 환율로 역산
@@ -4414,8 +4397,8 @@ function App() {
         </div>
         <div className="card">
           {(() => { const rows = view.holdings.filter((h) => usdAvgOf(h) && prices[h.sym]); if (!rows.length) return <p className="muted">달러 자산 시세 로딩 중…</p>;
-            const usdVal = rows.reduce((s2, h) => s2 + (h.sym === "CURRENCY:USDKRW" ? h.qty : h.qty * prices[h.sym].p), 0);
-            const usdCost = rows.reduce((s2, h) => s2 + (h.sym === "CURRENCY:USDKRW" ? h.qty : h.qty * usdAvgOf(h)), 0);
+            const usdVal = rows.reduce((s2, h) => s2 + h.qty * prices[h.sym].p, 0);
+            const usdCost = rows.reduce((s2, h) => s2 + h.qty * usdAvgOf(h), 0);
             const krwCost = rows.reduce((s2, h) => s2 + h.qty * avgKrwOf(h), 0);
             const avgFx = krwCost / usdCost; const nowFx = fxNow();
             const fxpl = rows.reduce((s2, h) => s2 + (fxPlOf(h) || 0), 0);
