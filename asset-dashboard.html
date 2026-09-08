@@ -4172,6 +4172,13 @@ function App() {
   };
   const [syncUrl, setSyncUrl] = useState(localStorage.getItem("sync")||"https://script.google.com/macros/s/AKfycbwNZ02Uj90O04joXisyklcbdFXJH9uPjdY0f7SQ-tlna5lNos9SO7uJLVE1SWzOZtrhGg/exec");
   const [prices, setPrices] = useState({});
+  // ── 외부 앱(구버전/다른 세션) 저장 감지: 이 앱은 저장할 때마다 _app/_savedAt/_device 스탬프를 찍는다. 스탬프 없는 원장 = 다른 앱이 저장한 것.
+  const APP_TAG = "asset-dashboard@bld-s.github.io";
+  const deviceId = (() => { let d = localStorage.getItem("deviceId"); if (!d) { d = "dev-" + Math.random().toString(36).slice(2, 8); localStorage.setItem("deviceId", d); } return d; })();
+  const stamp = (L) => ({ ...L, _app: APP_TAG, _savedAt: new Date().toISOString(), _device: deviceId });
+  const [foreign, setForeign] = useState(null); // { at, diff:[...], good:ledger|null }
+  const diffLedger = (good, cur) => { const G = {}; (good?.holdings || []).forEach((h) => { G[h.acct + "/" + h.name] = h; }); const C = {}; (cur?.holdings || []).forEach((h) => { C[h.acct + "/" + h.name] = h; }); const out = []; Object.keys(C).forEach((k) => { if (!G[k]) out.push(`+ ${k} (${fmt(C[k].val)}만)`); else if (Math.abs((C[k].val || 0) - (G[k].val || 0)) > 0.5 || (C[k].qty || 0) !== (G[k].qty || 0)) out.push(`~ ${k}: ${fmt(G[k].val)}만 → ${fmt(C[k].val)}만${(C[k].qty || 0) !== (G[k].qty || 0) ? ` (수량 ${G[k].qty}→${C[k].qty})` : ""}`); }); Object.keys(G).forEach((k) => { if (!C[k]) out.push(`− ${k} (${fmt(G[k].val)}만) 삭제됨`); }); const tg = (good?.trades || []).length, tc = (cur?.trades || []).length; if (tg !== tc) out.push(`거래 기록 ${tg}건 → ${tc}건`); return out; };
+  const checkForeign = (L) => { if (L && L._app === APP_TAG) { try { localStorage.setItem("ledgerGood", JSON.stringify(L)); } catch {} setForeign(null); return; } let good = null; try { good = JSON.parse(localStorage.getItem("ledgerGood") || "null"); } catch {} setForeign({ at: new Date(), diff: diffLedger(good, L), good, saver: L?._app || "스탬프 없음(구버전 앱 또는 다른 세션)" }); };
   // 엔/원 환율: 시트(GOOGLEFINANCE)가 CURRENCY: 심볼을 안 주므로 무료 환율 API(ECB/ER-API, 일 1회 갱신, CORS 허용)에서 직접
   const [jpyFx, setJpyFx] = useState(+localStorage.getItem("jpyFx") || 0);
   useEffect(() => { fetch("https://open.er-api.com/v6/latest/JPY").then((r) => r.json()).then((j) => { const k = j?.rates?.KRW; if (k) { setJpyFx(k); localStorage.setItem("jpyFx", String(k)); } }).catch(() => {}); }, []);
@@ -4197,8 +4204,9 @@ function App() {
   const cd = (L.holdings || []).map((h, i) => (h.acct === "미래에셋 ISA" && h.sym === "KRX:459580" ? i : -1)).filter((i) => i >= 0); if (cd.length > 1) { cd.slice(1).reverse().forEach((i) => L.holdings.splice(i, 1)); ch = true; }
   Object.values(dup).forEach((ixs) => { if (ixs.length > 1) { const keep = ixs[ixs.length - 1]; ixs.slice(0, -1).reverse().forEach((i) => { if (Math.abs(L.holdings[i].qty - L.holdings[keep].qty) < 0.01) { L.holdings.splice(i, 1); ch = true; } }); } });
   return ch; };
-  const pull = async (url) => { try { setSyncMsg("시트에서 불러오는 중…"); const r = await fetch(url); const j = await r.json(); if (j.ledger) { const ch = migrate(j.ledger); setSt(j.ledger); if (ch) await fetch(url, { method: "POST", body: JSON.stringify(j.ledger) }); } else { await fetch(url, { method: "POST", body: JSON.stringify(st) }); } setPrices(j.prices||{}); if (j.fx) { setFxAuto(j.fx); setFx(String(Math.round(j.fx * 10) / 10)); localStorage.setItem("fx", String(Math.round(j.fx * 10) / 10)); } setSyncMsg("동기화됨 " + new Date().toLocaleTimeString("ko-KR")); } catch (e) { setSyncMsg("동기화 실패: " + e.message); } };
+  const pull = async (url) => { try { setSyncMsg("시트에서 불러오는 중…"); const r = await fetch(url); const j = await r.json(); if (j.ledger) { const ch = migrate(j.ledger); checkForeign(j.ledger); setSt(j.ledger); if (ch) await fetch(url, { method: "POST", body: JSON.stringify(j.ledger) }); } else { await fetch(url, { method: "POST", body: JSON.stringify(st) }); } setPrices(j.prices||{}); if (j.fx) { setFxAuto(j.fx); setFx(String(Math.round(j.fx * 10) / 10)); localStorage.setItem("fx", String(Math.round(j.fx * 10) / 10)); } setSyncMsg("동기화됨 " + new Date().toLocaleTimeString("ko-KR")); } catch (e) { setSyncMsg("동기화 실패: " + e.message); } };
   useEffect(() => { if (syncUrl) pull(syncUrl); }, []);
+  useEffect(() => { if (!syncUrl) return; const id = setInterval(async () => { if (document.hidden) return; try { const r = await fetch(syncUrl + (syncUrl.includes("?") ? "&" : "?") + "t=" + Date.now()); const j = await r.json(); if (j.ledger && j.ledger._app !== APP_TAG) checkForeign(j.ledger); } catch {} }, 5 * 60 * 1000); return () => clearInterval(id); }, [syncUrl]);
 
   useEffect(() => { (async () => {
     try { const r = await window.storage.get("ledger"); if (r) setSt(JSON.parse(r.value)); } catch {}
@@ -4206,10 +4214,10 @@ function App() {
     try { const r = await window.storage.get("report:" + today()); if (r) setReport(JSON.parse(r.value)); } catch {}
     setLoaded(true);
   })(); }, []);
-  const save = async (next) => { setSt(next); try { await window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } } };
+  const save = async (next) => { next = stamp(next); setSt(next); try { await window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } } };
   // 타이핑 중 키 입력마다 시트로 쏘면 응답 순서가 뒤섞여 예전 값이 저장됨 → 입력 멈춘 뒤 1회만 전송
   const postTimer = React.useRef(null);
-  const saveDebounced = (next) => { setSt(next); try { window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { clearTimeout(postTimer.current); setSyncMsg("입력 중…"); postTimer.current = setTimeout(async () => { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } }, 900); } };
+  const saveDebounced = (next) => { next = stamp(next); setSt(next); try { window.storage.set("ledger", JSON.stringify(next)); } catch {} if (syncUrl) { clearTimeout(postTimer.current); setSyncMsg("입력 중…"); postTimer.current = setTimeout(async () => { try { setSyncMsg("시트에 저장 중…"); await fetch(syncUrl, { method: "POST", body: JSON.stringify(next) }); setSyncMsg("시트 저장됨"); } catch (e) { setSyncMsg("시트 저장 실패: " + e.message); } }, 900); } };
 
   const avgOf = (h) => { if (!h.avg) return null; const n = parseFloat(String(h.avg).replace(/[^0-9.]/g, "")); return n || null; };
   const isUsdQuoted = (h) => h.sym && !h.sym.startsWith("KRX:") && !h.sym.includes("KRW") && !["JPY=X", "GC=F"].includes(h.sym);
@@ -4384,6 +4392,16 @@ function App() {
       const fxpl = uTot - sp;
       return tc > 0 ? <div style={{ marginTop: 8, fontFamily: "ui-monospace,monospace", fontSize: 16, fontWeight: 600, color: tp >= 0 ? "#E5484D" : "#3E7BFA" }}>투자 평가손익 {tp >= 0 ? "+" : "−"}₩{Math.abs(Math.round(tp)).toLocaleString()} ({tp >= 0 ? "+" : ""}{((tp / tc) * 100).toFixed(2)}%)<div className="muted" style={{ fontSize: 12, fontWeight: 400, marginTop: 2 }}>미국주식 내역: 주가 {sp >= 0 ? "+" : "−"}₩{Math.abs(Math.round(sp)).toLocaleString()} · 환차 {fxpl >= 0 ? "+" : "−"}₩{Math.abs(Math.round(fxpl)).toLocaleString()} · 원화 실질 기준(증권앱과 동일)</div></div> : null; })()}
 
+      {foreign && <div className="card" style={{ background: "#2a1a1a", border: "2px solid #E5484D" }}>
+        <div style={{ color: "#E5484D", fontWeight: 700, fontSize: 15 }}>⚠️ 다른 앱이 원장을 저장했습니다 ({foreign.at.toLocaleTimeString("ko-KR")} 감지)</div>
+        <p className="muted" style={{ margin: "6px 0" }}>저장 주체: <b>{foreign.saver}</b>. 이 대시보드가 아닌 곳(구버전 페이지가 열린 폰·브라우저, 또는 다른 클로드 세션)에서 시트에 썼습니다. 구조는 자동 정리됐지만 숫자는 그쪽 값입니다. 여기서 뭔가 저장하면 다시 정상 스탬프가 찍힙니다.</p>
+        {foreign.diff.length > 0 ? <ul style={{ margin: "6px 0", paddingLeft: 18, fontFamily: "ui-monospace,monospace", fontSize: 12, lineHeight: 1.7 }}>{foreign.diff.slice(0, 12).map((d, i) => <li key={i} style={{ color: d.startsWith("−") ? "#E5484D" : d.startsWith("+") ? "#7ED491" : "#F2B84B" }}>{d}</li>)}{foreign.diff.length > 12 && <li className="muted">… 외 {foreign.diff.length - 12}건</li>}</ul> : <p className="muted" style={{ margin: "6px 0" }}>{foreign.good ? "마지막 정상본과 금액 차이는 없습니다." : "비교할 정상본이 이 기기에 없어 변경 내역은 표시 못 합니다 (다음부터는 표시됨)."}</p>}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
+          <button className="btn" onClick={() => { if (confirm("현재 시트 값을 그대로 인정하고 이 대시보드 스탬프로 다시 저장할까요?")) { save(st); setForeign(null); } }}>이 값 인정 (스탬프 다시 찍기)</button>
+          {foreign.good && <button className="btn sec" style={{ background: "#E5484D", color: "#fff" }} onClick={() => { if (confirm("마지막 정상본(" + (foreign.good._savedAt || "").slice(0, 16).replace("T", " ") + " 저장)으로 되돌립니다. 그 이후 다른 앱이 넣은 변경은 사라집니다. 진행할까요?")) { const g = { ...foreign.good }; migrate(g); save(g); setForeign(null); } }}>마지막 정상본으로 되돌리기</button>}
+          <button className="btn sec" onClick={() => setForeign(null)}>닫기</button>
+        </div>
+      </div>}
       <div className="tabs">{["원장", "히트맵", "매매", "차트", "공포지수", "시황"].map((t) => <button key={t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>{t}</button>)}</div>
 
       {tab === "원장" && (<>
@@ -4518,7 +4536,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-08 14:51</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-08 15:43</div>
     </div>
   );
 }
