@@ -4172,6 +4172,9 @@ function App() {
   };
   const [syncUrl, setSyncUrl] = useState(localStorage.getItem("sync")||"https://script.google.com/macros/s/AKfycbwNZ02Uj90O04joXisyklcbdFXJH9uPjdY0f7SQ-tlna5lNos9SO7uJLVE1SWzOZtrhGg/exec");
   const [prices, setPrices] = useState({});
+  // 엔/원 환율: 시트(GOOGLEFINANCE)가 CURRENCY: 심볼을 안 주므로 무료 환율 API(ECB/ER-API, 일 1회 갱신, CORS 허용)에서 직접
+  const [jpyFx, setJpyFx] = useState(+localStorage.getItem("jpyFx") || 0);
+  useEffect(() => { fetch("https://open.er-api.com/v6/latest/JPY").then((r) => r.json()).then((j) => { const k = j?.rates?.KRW; if (k) { setJpyFx(k); localStorage.setItem("jpyFx", String(k)); } }).catch(() => {}); }, []);
   const [syncMsg, setSyncMsg] = useState("");
   const MIG = { "UNH": { avg: "₩510,310", usdAvg: "$344.40" }, "JPM": { avg: "₩432,092", usdAvg: "$293.89" }, "AMZN": { avg: "₩300,040", usdAvg: "$207.52" }, "AVGO": { avg: "₩561,734", usdAvg: "$397.02" }, "O": { avg: "₩76,832", usdAvg: "$53.81" }, "MO": { avg: "₩82,556", usdAvg: "$57.61" }, "NVO": { avg: "₩89,735", usdAvg: "$60.93" }, "KHC": { avg: "₩37,900", usdAvg: "$25.40" }, "SGOV": { avg: "₩145,597", usdAvg: "$100.54" } };
   const migrate = (L) => { let ch = false; (L.holdings || []).forEach((h) => {
@@ -4213,7 +4216,7 @@ function App() {
   const fxNow = () => +fx || fxAuto || 0;
   const usdAvgOf = (h) => { if (!h.usdAvg) return null; const n = parseFloat(String(h.usdAvg).replace(/[^0-9.]/g, "")); return n || null; };
   const avgKrwOf = (h) => { const a = avgOf(h); if (!a) return null; return String(h.avg).trim().startsWith("$") ? a * fxNow() : a; };
-  const priceKrwOf = (h) => { const q = prices[h.sym]; if (!q) return null; return isUsdQuoted(h) ? q.p * fxNow() : q.p; };
+  const priceKrwOf = (h) => { if (h.sym === "CURRENCY:JPYKRW") return jpyFx || null; const q = prices[h.sym]; if (!q) return null; return isUsdQuoted(h) ? q.p * fxNow() : q.p; };
   const pnlOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? ((p - a) / a) * 100 : null; };
   const stockPlOf = (h) => { const au = usdAvgOf(h), q = prices[h.sym]; return au && q ? (q.p - au) * h.qty * fxNow() : null; };
   const fxPlOf = (h) => { const sp2 = stockPlOf(h); return sp2 == null ? null : profitKrwOf(h) - sp2; };
@@ -4223,9 +4226,9 @@ function App() {
   const costKrwOf = (h) => { const a = avgKrwOf(h), p = priceKrwOf(h); return a && p ? a * h.qty : 0; };
   // 시세 자동 평가: 시세가 있고 수동 고정(manual)이 아니면 수량×현재가(×환율)
   // usdCash: 달러 예수금 — qty가 USD 잔액, 환율로 자동 환산
-  const autoVal = (h) => { if (h.usdCash) { const f = +fx || fxAuto || 0; return f ? (h.qty * f) / 10000 : null; } const q = prices[h.sym]; if (!q || !h.sym || h.manual) return null; const krw = (h.sym.startsWith("KRX:") || h.sym.includes("KRW")) ? q.p : q.p * (+fx || fxAuto || 0); return krw ? (h.qty * krw) / 10000 : null; };
+  const autoVal = (h) => { if (h.sym === "CURRENCY:JPYKRW") { if (h.manual) return null; return jpyFx ? (h.qty * jpyFx) / 10000 : null; } if (h.usdCash) { const f = +fx || fxAuto || 0; return f ? (h.qty * f) / 10000 : null; } const q = prices[h.sym]; if (!q || !h.sym || h.manual) return null; const krw = (h.sym.startsWith("KRX:") || h.sym.includes("KRW")) ? q.p : q.p * (+fx || fxAuto || 0); return krw ? (h.qty * krw) / 10000 : null; };
   const curVal = (h) => { const a = autoVal(h); return a == null ? h.val : a; };
-  const view = useMemo(() => ({ ...st, holdings: st.holdings.map((h) => ({ ...h, val: curVal(h), auto: autoVal(h) != null })) }), [st, prices, fx, fxAuto]);
+  const view = useMemo(() => ({ ...st, holdings: st.holdings.map((h) => ({ ...h, val: curVal(h), auto: autoVal(h) != null })) }), [st, prices, fx, fxAuto, jpyFx]);
   const total = useMemo(() => view.holdings.reduce((s, h) => s + h.val, 0), [view]);
   const liquid = useMemo(() => view.holdings.filter((h) => h.type !== "묶임").reduce((s, h) => s + h.val, 0), [view]);
   const byType = useMemo(() => view.holdings.reduce((m, h) => ({ ...m, [h.type]: (m[h.type] || 0) + h.val }), {}), [view]);
@@ -4324,7 +4327,7 @@ function App() {
                     {h.avg && <span className="muted"> · 평단 {h.avg}{h.usdAvg ? " (" + h.usdAvg + ")" : ""}</span>}
                     {pnlOf(h) != null && <span style={{ color: pnlOf(h) >= 0 ? "#E5484D" : "#3E7BFA" }}> · 수익률 {(pnlOf(h) >= 0 ? "+" : "") + pnlOf(h).toFixed(2)}% ({profitKrwOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(profitKrwOf(h))).toLocaleString()})</span>}
                     {fxPlOf(h) != null && <span className="muted" style={{ display: "block", fontSize: 10 }}>주가 {stockPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(stockPlOf(h))).toLocaleString()} · 환차 {fxPlOf(h) >= 0 ? "+" : "−"}₩{Math.abs(Math.round(fxPlOf(h))).toLocaleString()}</span>}
-                  </div></td><td className="n">{h.usdCash ? "USD" : h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n">{h.usdCash ? <>
+                  </div></td><td className="n">{h.usdCash ? "USD" : h.sym === "CURRENCY:JPYKRW" ? "¥" + h.qty.toLocaleString() : h.qty === 1 && !h.sym ? "" : h.qty}</td><td className="n">{h.usdCash ? <>
                   <input style={{ width: 112 }} inputMode="decimal" key={"usd" + h.ix} defaultValue={h.qty} onChange={(e) => editUsdQty(h.ix, parseFloat(e.target.value.replace(/[^0-9.]/g, "")) || 0)} />
                   <div style={{ fontFamily: "ui-monospace,monospace", fontSize: 11 }}>${h.qty.toLocaleString(undefined, { maximumFractionDigits: 2 })} × ₩{fxNow().toFixed(1)} = <b style={{ color: "#F2B84B" }}>{money(h.val)}</b></div>
                   {(() => { const a = avgOf(h); if (!a || !fxNow()) return <div className="muted" style={{ fontSize: 10 }}>실시간 환율 환산 · $ 금액 직접 수정 가능</div>; const d = (fxNow() - a) * h.qty; return <div style={{ fontSize: 10 }}><span className="muted">매입환율 ₩{a.toLocaleString()} → 환차 </span><span style={{ color: d >= 0 ? "#E5484D" : "#3E7BFA" }}>{d >= 0 ? "+" : "−"}₩{Math.abs(Math.round(d)).toLocaleString()}</span><span className="muted"> · $ 직접 수정 가능</span></div>; })()}
@@ -4515,7 +4518,7 @@ function App() {
           <p className="muted" style={{ marginTop: 10 }}>규칙: 10만원 이상 매매는 반드시 채팅 먼저. 체결 후엔 매매 탭에 기록해야 다음 상담이 정확합니다. 예시 질문: "오늘 시황 분석" / "잭슨홀 전 상황 브리핑" / "AMZN 1주 더 살까?"</p>
         </div>
       )}
-      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-08 11:12</div>
+      <div style={{ textAlign: "right", marginTop: 30, fontFamily: "ui-monospace,monospace", fontSize: 10, color: "#4F5E75" }}>최종 수정 2026-09-08 14:51</div>
     </div>
   );
 }
