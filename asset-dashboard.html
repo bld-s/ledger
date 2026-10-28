@@ -4183,7 +4183,7 @@ function App() {
   const [jpyFx, setJpyFx] = useState(+localStorage.getItem("jpyFx") || 0);
   useEffect(() => { fetch("https://open.er-api.com/v6/latest/JPY").then((r) => r.json()).then((j) => { const k = j?.rates?.KRW; if (k) { setJpyFx(k); localStorage.setItem("jpyFx", String(k)); } }).catch(() => {}); }, []);
   const [syncMsg, setSyncMsg] = useState("");
-  const MIG = { "UNH": { avg: "₩510,310", usdAvg: "$344.40" }, "JPM": { avg: "₩432,092", usdAvg: "$293.89" }, "AMZN": { avg: "₩300,040", usdAvg: "$207.52" }, "AVGO": { avg: "₩561,734", usdAvg: "$397.02" }, "O": { avg: "₩76,832", usdAvg: "$53.81" }, "MO": { avg: "₩82,556", usdAvg: "$57.61" }, "NVO": { avg: "₩89,735", usdAvg: "$60.93" }, "KHC": { avg: "₩37,900", usdAvg: "$25.40" }, "SGOV": { avg: "₩145,597", usdAvg: "$100.54" } };
+  const MIG = { "UNH": { avg: "₩510,310", usdAvg: "$344.40" }, "JPM": { avg: "₩432,092", usdAvg: "$293.89" }, "AMZN": { avg: "₩300,040", usdAvg: "$207.52" }, "AVGO": { avg: "₩561,734", usdAvg: "$397.02" }, "O": { avg: "₩75,295", usdAvg: "$54.46" }, "MO": { avg: "₩82,556", usdAvg: "$57.61" }, "NVO": { avg: "₩89,735", usdAvg: "$60.93" }, "KHC": { avg: "₩37,900", usdAvg: "$25.40" }, "SGOV": { avg: "₩145,597", usdAvg: "$100.54" } };
   const migrate = (L) => { let ch = false; (L.holdings || []).forEach((h) => {
     if (MIG[h.name] && (h.avg !== MIG[h.name].avg || h.usdAvg !== MIG[h.name].usdAvg)) { h.avg = MIG[h.name].avg; h.usdAvg = MIG[h.name].usdAvg; ch = true; }
     if (h.name === "BTC" && h.sym !== "CURRENCY:BTCUSD") { Object.assign(h, { sym: "CURRENCY:BTCUSD", qty: 0.01748425, avg: "₩98,333,927" }); delete h.manual; ch = true; }
