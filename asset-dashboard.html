@@ -4203,6 +4203,11 @@ function App() {
   // ISA에 KODEX CD금리액티브(합성)이 2개 이상이면(구버전 앱이 CD금리를 다시 만든 경우) 첫 항목만 남김
   const cd = (L.holdings || []).map((h, i) => (h.acct === "미래에셋 ISA" && h.sym === "KRX:459580" ? i : -1)).filter((i) => i >= 0); if (cd.length > 1) { cd.slice(1).reverse().forEach((i) => L.holdings.splice(i, 1)); ch = true; }
   Object.values(dup).forEach((ixs) => { if (ixs.length > 1) { const keep = ixs[ixs.length - 1]; ixs.slice(0, -1).reverse().forEach((i) => { if (Math.abs(L.holdings[i].qty - L.holdings[keep].qty) < 0.01) { L.holdings.splice(i, 1); ch = true; } }); } });
+  // 10/28 삼성증권 O(리얼티인컴) 6주 추가매수 → 12주. 달러예수금은 사용자가 UI에서 직접 수정했으므로 건드리지 않음
+  { const o = (L.holdings || []).find((h) => h.acct === "삼성증권" && h.name === "O"); if (o && o.qty !== 12) { Object.assign(o, { qty: 12, avg: "₩75,295", usdAvg: "$54.46" }); delete o.manual;
+    L.trades = [{ d: "2026-10-28", side: "매수", acct: "삼성증권", name: "O", qty: 6, price: "$55.12", amt: 44.3, memo: "인컴 추가 6주 → 12주 · 총평단 $54.46 (평가 $679.92, +4.03%) · 환율 1,338 가정" }, ...(L.trades || [])]; ch = true; } }
+  // 10/28 출장 후 남은 엔화 ₩417,400 → ¥49,415 (100엔=844.68원 기준). 229,621에서 한 번만 교체
+  { const y = (L.holdings || []).find((h) => h.sym === "CURRENCY:JPYKRW"); if (y && y.qty === 229621) { Object.assign(y, { qty: 49415, name: "토스뱅크 엔화 (출장 잔여·사업)" }); delete y.manual; ch = true; } }
   // 9/18 키움 SK하이닉스 1주 매수 @1,815,000 (예수금 차감) — 이미 반영됐으면 건너뜀
   if (!(L.holdings || []).some((h) => h.sym === "KRX:000660")) {
     const kw = (L.holdings || []).find((h) => h.acct === "키움" && h.name === "키움 예수금"); if (kw) kw.val = Math.round((kw.val - 181.5) * 10000) / 10000;
