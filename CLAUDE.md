@@ -9,3 +9,4 @@
 - 공포지수 탭: CNN Fear&Greed API(브라우저 CORS 허용) + 그 안의 VIX 시계열 사용. VKOSPI는 무료 API 없음 → 수동 입력
 - ⚠️ 다른 세션·다른 기기에서 작업할 때는 반드시 `git pull origin main`으로 최신본을 받은 뒤 수정할 것. 오래된 로컬 복사본(다운로드 폴더 등)으로 커밋하면 기능이 통째로 사라진다 (2026-09-04 "환전 1차" 커밋이 56KB 구버전으로 덮어쓴 사고 있었음 → 09-05 복구)
 - 🔒 원장 저장 규칙: 대시보드는 저장 시 `_app: "asset-dashboard@bld-s.github.io"`, `_savedAt`, `_device` 스탬프를 찍는다. 스탬프 없는 원장이 시트에 있으면 사용자 화면에 "다른 앱이 원장을 저장했습니다" 빨간 경고 + 변경 내역 + 정상본 복원 버튼이 뜬다. **다른 세션/스크립트가 시트에 POST할 때는 이 스탬프를 유지하지 말고 그냥 저장하지 말 것** — 원장 수정은 이 대시보드 UI 또는 이 레포 main의 최신 코드로만.
+- 공개 템플릿: `python3 make-public.py` → `../asset-dashboard-public/index.html` 생성(개인 데이터·시트 URL·migrate 제거, 샘플 데이터, 시세는 트레이딩뷰 스캐너 폴백). 공개 레포 bld-s/asset-dashboard-public 에 index.html+README.md 업로드. 원본이 바뀌면 생성기를 다시 돌려 재배포. 생성기는 앵커 누락·개인정보 누출 시 즉시 실패하도록 단언이 걸려 있음.
